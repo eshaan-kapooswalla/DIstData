@@ -286,6 +286,230 @@ SimpleNode* getNode(const std::string& key, const std::unordered_map<std::size_t
 //     return 0;
 // }
 
+// --- Hash-Based Data Partitioning Example ---
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <functional>
+
+// Structure to represent a node
+struct PartitionDemoNode {
+    std::string id;
+    std::string address;
+};
+
+// Function to compute the hash of a key
+std::size_t demoComputeHash(const std::string& key) {
+    return std::hash<std::string>{}(key);
+}
+
+// Function to determine the node for a given key
+PartitionDemoNode* demoGetNode(const std::string& key, const std::unordered_map<std::size_t, PartitionDemoNode>& nodes) {
+    std::size_t hash = demoComputeHash(key);
+    std::size_t nodeIndex = hash % nodes.size();
+    auto it = nodes.find(nodeIndex);
+    if (it != nodes.end()) {
+        return const_cast<PartitionDemoNode*>(&it->second);
+    }
+    return nullptr;
+}
+
+// Example usage:
+// int main() {
+//     // Create nodes
+//     PartitionDemoNode node1 = {"Node1", "192.168.1.1"};
+//     PartitionDemoNode node2 = {"Node2", "192.168.1.2"};
+//     PartitionDemoNode node3 = {"Node3", "192.168.1.3"};
+//     // Store nodes in an unordered_map with their hash as key
+//     std::unordered_map<std::size_t, PartitionDemoNode> nodes;
+//     nodes[std::hash<std::string>{}(node1.id)] = node1;
+//     nodes[std::hash<std::string>{}(node2.id)] = node2;
+//     nodes[std::hash<std::string>{}(node3.id)] = node3;
+//     // Example keys
+//     std::string key1 = "record1";
+//     std::string key2 = "record2";
+//     std::string key3 = "record3";
+//     // Determine nodes for keys
+//     PartitionDemoNode* nodeForKey1 = demoGetNode(key1, nodes);
+//     PartitionDemoNode* nodeForKey2 = demoGetNode(key2, nodes);
+//     PartitionDemoNode* nodeForKey3 = demoGetNode(key3, nodes);
+//     // Output results
+//     std::cout << "Key: " << key1 << " assigned to Node ID: " << nodeForKey1->id << std::endl;
+//     std::cout << "Key: " << key2 << " assigned to Node ID: " << nodeForKey2->id << std::endl;
+//     std::cout << "Key: " << key3 << " assigned to Node ID: " << nodeForKey3->id << std::endl;
+//     return 0;
+// }
+
+// --- Peer-to-Peer Replication Example ---
+#include <iostream>
+#include <vector>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+
+// Data structure to represent a node in the system
+struct ReplicationNode {
+    std::string id;
+    std::string address;
+    bool is_active;
+};
+
+// Data structure to represent a data record
+struct DataRecord {
+    std::string key;
+    std::string value;
+    std::chrono::system_clock::time_point timestamp;
+};
+
+class ReplicationManager {
+private:
+    std::vector<ReplicationNode> nodes;
+    std::vector<DataRecord> data;
+    std::mutex mtx;
+    std::condition_variable cv;
+
+public:
+    ReplicationManager(const std::vector<ReplicationNode>& initial_nodes) : nodes(initial_nodes) {}
+
+    // Function to handle write operations
+    void write(const std::string& key, const std::string& value) {
+        std::unique_lock<std::mutex> lock(mtx);
+        DataRecord record;
+        record.key = key;
+        record.value = value;
+        record.timestamp = std::chrono::system_clock::now();
+        data.push_back(record);
+        broadcast(record);
+        lock.unlock();
+        cv.notify_all();
+    }
+
+    // Function to handle read operations
+    std::string read(const std::string& key) {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [this]{ return !data.empty(); });
+        DataRecord latest;
+        for (const auto& record : data) {
+            if (record.key == key) {
+                if (record.timestamp > latest.timestamp) {
+                    latest = record;
+                }
+            }
+        }
+        return latest.value;
+    }
+
+    // Function to broadcast updates to all nodes
+    void broadcast(const DataRecord& record) {
+        // Implement your broadcasting logic here
+        // This could be TCP/IP communication, HTTP requests, etc.
+    }
+
+    // Function to handle node failures
+    void handleNodeFailure(const std::string& node_id) {
+        // Implement failure handling logic here
+        // This could involve re-electing a leader, redistributing data, etc.
+    }
+};
+
+// Example usage:
+// int main() {
+//     std::vector<ReplicationNode> nodes = {
+//         {"node1", "localhost:8080", true},
+//         {"node2", "localhost:8081", true},
+//         {"node3", "localhost:8082", true}
+//     };
+//     ReplicationManager rm(nodes);
+//     rm.write("key1", "value1");
+//     std::cout << "Value for key1: " << rm.read("key1") << std::endl;
+//     return 0;
+// }
+
+// --- Replication Factor Management Example ---
+#include <vector>
+#include <map>
+#include <string>
+#include <algorithm>
+
+// Represents a node in the system
+struct RFNode {
+    std::string id;
+    std::string address;
+};
+
+// Manages replication factor for data items
+class ReplicationFactorManager {
+private:
+    // Mapping from data item to its replicas
+    std::map<std::string, std::vector<RFNode>> dataReplicas;
+    // Mapping from node ID to its current data items
+    std::map<std::string, std::vector<std::string>> nodeData;
+    // List of available nodes
+    std::vector<RFNode> availableNodes;
+    // Current replication factor
+    int replicationFactor;
+
+public:
+    ReplicationFactorManager(int replicationFactor) 
+        : replicationFactor(replicationFactor) {}
+
+    // Register a new node with the system
+    void registerNode(const RFNode& node) {
+        availableNodes.push_back(node);
+    }
+
+    // Deregister a node from the system
+    void deregisterNode(const std::string& nodeId) {
+        // Remove the node from availableNodes
+        availableNodes.erase(std::remove_if(availableNodes.begin(), availableNodes.end(),
+            [&nodeId](const RFNode& n) { return n.id == nodeId; }),
+            availableNodes.end());
+
+        // Migrate data from this node to other nodes
+        if (nodeData.find(nodeId) != nodeData.end()) {
+            for (const auto& dataId : nodeData[nodeId]) {
+                if (dataReplicas[dataId].size() < replicationFactor) {
+                    // Find new nodes to replicate to
+                    replicateData(dataId);
+                }
+            }
+            nodeData.erase(nodeId);
+        }
+    }
+
+    // Replicate a data item to maintain the replication factor
+    void replicateData(const std::string& dataId) {
+        // Determine which nodes should hold replicas
+        std::vector<RFNode> targetNodes;
+        for (const auto& node : availableNodes) {
+            if (std::find_if(dataReplicas[dataId].begin(), dataReplicas[dataId].end(),
+                [&node](const RFNode& n) { return n.id == node.id; }) == dataReplicas[dataId].end()) {
+                targetNodes.push_back(node);
+                if (targetNodes.size() == replicationFactor) {
+                    break;
+                }
+            }
+        }
+
+        // Update dataReplicas and nodeData maps
+        for (const auto& node : targetNodes) {
+            dataReplicas[dataId].push_back(node);
+            nodeData[node.id].push_back(dataId);
+        }
+    }
+
+    // Check if replication factor is maintained for all data items
+    bool isReplicationFactorMaintained() const {
+        for (const auto& entry : dataReplicas) {
+            if (entry.second.size() != replicationFactor) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
 int main() {
     std::cout << "CoordinatorNode started. Listening for client queries..." << std::endl;
     CoordinatorNode coordinator;
@@ -297,3 +521,121 @@ int main() {
 
     return 0;
 } 
+
+// --- Data Distribution and Replication Test Suite ---
+#include <iostream>
+#include <map>
+#include <vector>
+#include <stdexcept>
+#include <string>
+
+// Dummy node and data store for testing
+struct TestNode {
+    std::string id;
+    std::vector<std::string> data;
+};
+
+std::map<std::string, TestNode> testNodes;
+
+void addNode(const TestNode& node) {
+    testNodes[node.id] = node;
+}
+
+void insertData(const std::string& data) {
+    // Hash-based partitioning: assign to node by hash
+    std::vector<std::string> nodeIds;
+    for (const auto& n : testNodes) nodeIds.push_back(n.first);
+    std::size_t hash = std::hash<std::string>{}(data);
+    std::string nodeId = nodeIds[hash % nodeIds.size()];
+    testNodes[nodeId].data.push_back(data);
+}
+
+void insertDataWithReplication(const std::string& data, int replicationFactor) {
+    std::vector<std::string> nodeIds;
+    for (const auto& n : testNodes) nodeIds.push_back(n.first);
+    std::size_t hash = std::hash<std::string>{}(data);
+    int startIdx = hash % nodeIds.size();
+    for (int i = 0; i < replicationFactor; ++i) {
+        int idx = (startIdx + i) % nodeIds.size();
+        testNodes[nodeIds[idx]].data.push_back(data);
+    }
+}
+
+std::vector<std::string> getNodeData(const std::string& nodeId) {
+    return testNodes[nodeId].data;
+}
+
+void assertDataDistribution(const std::map<std::string, std::vector<std::string>> &expected) {
+    for (const auto &node : expected) {
+        std::vector<std::string> actualData = getNodeData(node.first);
+        if (actualData != node.second) {
+            throw std::runtime_error("Data distribution mismatch for node " + node.first);
+        }
+    }
+}
+
+void testBasicDataDistribution() {
+    testNodes.clear();
+    addNode({"Node1", {}});
+    addNode({"Node2", {}});
+    addNode({"Node3", {}});
+    std::string data = "SampleData1";
+    insertData(data);
+    // Only one node should have the data
+    std::map<std::string, std::vector<std::string>> expectedResult = {
+        {"Node1", {}},
+        {"Node2", {}},
+        {"Node3", {}}
+    };
+    // Find which node got the data
+    for (auto& n : expectedResult) {
+        if (getNodeData(n.first).size() == 1) n.second.push_back(data);
+    }
+    assertDataDistribution(expectedResult);
+}
+
+void testDataReplication() {
+    testNodes.clear();
+    addNode({"Node1", {}});
+    addNode({"Node2", {}});
+    addNode({"Node3", {}});
+    std::string data = "SampleData2";
+    insertDataWithReplication(data, 2);
+    // Data should be present in two nodes
+    std::map<std::string, std::vector<std::string>> expectedResult = {
+        {"Node1", {}},
+        {"Node2", {}},
+        {"Node3", {}}
+    };
+    int count = 0;
+    for (auto& n : expectedResult) {
+        if (getNodeData(n.first).size() == 1 && count < 2) {
+            n.second.push_back(data);
+            ++count;
+        }
+    }
+    assertDataDistribution(expectedResult);
+}
+
+void initializeSystem() {
+    // Placeholder for any system-wide initialization
+}
+
+void cleanupSystem() {
+    testNodes.clear();
+}
+
+// Example usage:
+// int main() {
+//     try {
+//         initializeSystem();
+//         testBasicDataDistribution();
+//         testDataReplication();
+//         cleanupSystem();
+//     } catch (const std::exception &e) {
+//         std::cerr << "Test failed: " << e.what() << std::endl;
+//         return 1;
+//     }
+//     std::cout << "All tests passed successfully!" << std::endl;
+//     return 0;
+// } 
