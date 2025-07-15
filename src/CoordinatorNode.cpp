@@ -6,6 +6,16 @@
 #include <unordered_map>
 #include <openssl/md5.h>
 #include <climits>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <cstring>
+#include <cstdint>
+#include "Communication.h"
+#include "message.h"
+#include "message_serializer.h"
+#include "message_deserializer.h"
 
 // Represents a key-value pair with metadata
 struct KeyValue {
@@ -511,14 +521,52 @@ public:
 };
 
 int main() {
-    std::cout << "CoordinatorNode started. Listening for client queries..." << std::endl;
-    CoordinatorNode coordinator;
-    std::string data = coordinator.getData("partition1");
-    std::cout << "CoordinatorNode received data: " << data << std::endl;
-
-    // Example usage in main (add this to your main function to see the demo)
-    // shardingReplicationDemo();
-
+    std::cout << "CoordinatorNode (Registrar) started. Listening for node/client messages..." << std::endl;
+    int server_fd = Communication::startServer(8080);
+    if (server_fd < 0) {
+        std::cerr << "Failed to start server." << std::endl;
+        return 1;
+    }
+    while (true) {
+        struct sockaddr_in address;
+        int addrlen = sizeof(address);
+        int client_sock = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+        if (client_sock < 0) {
+            perror("accept");
+            continue;
+        }
+        std::string request = Communication::receiveMessage(client_sock);
+        if (request.empty()) {
+            Communication::closeSocket(client_sock);
+            continue;
+        }
+        std::vector<uint8_t> reqBuf(request.begin(), request.end());
+        Message reqMsg = MessageDeserializer::deserialize(reqBuf);
+        switch (reqMsg.type) {
+            case MessageType::NODE_REGISTRATION:
+                handleRegistration(reqMsg);
+                break;
+            case MessageType::NODE_LIST_REQUEST:
+                handleNodeListRequest(client_sock);
+                break;
+            case MessageType::DATA_REQUEST: {
+                // Demo: respond with stub data
+                Message respMsg;
+                respMsg.type = MessageType::DATA_RESPONSE;
+                respMsg.key_value.key = reqMsg.key_value.key;
+                respMsg.key_value.value = "SampleDataFor:" + reqMsg.key_value.key;
+                std::vector<uint8_t> serialized = MessageSerializer::serialize(respMsg);
+                std::string out(reinterpret_cast<const char*>(serialized.data()), serialized.size());
+                Communication::sendMessage(client_sock, out);
+                break;
+            }
+            default:
+                std::cout << "Unknown message type received." << std::endl;
+                break;
+        }
+        Communication::closeSocket(client_sock);
+    }
+    Communication::closeSocket(server_fd);
     return 0;
 } 
 

@@ -1,45 +1,48 @@
 #include <iostream>
 #include <string>
-
-class CoordinatorNode {
-public:
-    CoordinatorNode(const std::string& host, int port) {
-        // TODO: Store host/port, set up connection
-    }
-    // Placeholder for query execution
-    std::string executeQuery(const std::string& query) {
-        // TODO: Implement sending query to CoordinatorNode over TCP
-        std::cout << "CoordinatorNode::executeQuery called with query: " << query << std::endl;
-        return "QueryResultStub";
-    }
-};
-
-class CommunicationManager {
-    // TODO: Implement communication logic
-};
-
-class ClientNode {
-private:
-    CommunicationManager comm;
-public:
-    void requestData(const std::string& request) {
-        // TODO: Send request to server and receive data
-        std::cout << "ClientNode::requestData called with request: " << request << std::endl;
-    }
-};
-
-class Client {
-public:
-    void sendQuery(const std::string& query) {
-        CoordinatorNode coordinator("localhost", 8080);
-        std::string result = coordinator.executeQuery(query);
-        std::cout << "Client received result: " << result << std::endl;
-    }
-};
+#include <vector>
+#include "Communication.h"
+#include "message.h"
+#include "message_serializer.h"
+#include "message_deserializer.h"
 
 int main() {
-    std::cout << "Client started. Ready to send queries to CoordinatorNode..." << std::endl;
-    Client client;
-    client.sendQuery("SELECT * FROM users;");
+    std::cout << "Client started. Connecting to CoordinatorNode..." << std::endl;
+    // Connect to CoordinatorNode (server)
+    int sock = Communication::startClient("127.0.0.1", 8080);
+    if (sock < 0) {
+        std::cerr << "Failed to connect to CoordinatorNode." << std::endl;
+        return 1;
+    }
+
+    // Prepare a DATA_REQUEST message
+    Message msg;
+    msg.type = MessageType::DATA_REQUEST;
+    msg.key_value.key = "users";
+    msg.key_value.value = ""; // No value for request
+    std::vector<uint8_t> serialized = MessageSerializer::serialize(msg);
+
+    // Send the serialized message
+    std::string out(reinterpret_cast<const char*>(serialized.data()), serialized.size());
+    if (!Communication::sendMessage(sock, out)) {
+        std::cerr << "Failed to send message." << std::endl;
+        Communication::closeSocket(sock);
+        return 1;
+    }
+
+    // Receive the response
+    std::string response = Communication::receiveMessage(sock);
+    Communication::closeSocket(sock);
+    if (response.empty()) {
+        std::cerr << "No response from CoordinatorNode." << std::endl;
+        return 1;
+    }
+    std::vector<uint8_t> respBuf(response.begin(), response.end());
+    Message respMsg = MessageDeserializer::deserialize(respBuf);
+    if (respMsg.type == MessageType::DATA_RESPONSE) {
+        std::cout << "Client received data: key='" << respMsg.key_value.key << "', value='" << respMsg.key_value.value << "'" << std::endl;
+    } else {
+        std::cout << "Client received unknown response type." << std::endl;
+    }
     return 0;
 } 
